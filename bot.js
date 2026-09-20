@@ -28,7 +28,7 @@ chromiumExtra.use(AnonymizeUA());
    ═══════════════════════════════════════════════════════ */
 
 const CFG = {
-    targetUrl:          process.env.TARGET_URL          || "https://example.com",
+    targetUrl:          process.env.TARGET_URL          || "https://www.tiktok.com/@candyblast44/video/7671386366139239687",
     botId:              process.env.BOT_ID              || "1",
     maxDuration:        parseInt(process.env.MAX_DURATION_MINUTES || "8", 10),
     adBlockerRate:      parseFloat(process.env.ADBLOCKER_RATE || "0.20"),
