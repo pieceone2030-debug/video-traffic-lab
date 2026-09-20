@@ -1,0 +1,105 @@
+name: Video Traffic Lab
+
+on:
+  workflow_dispatch:
+    inputs:
+      matrix_count:
+        description: 'Number of bots'
+        required: true
+        default: '20'
+        type: choice
+        options: ['10', '15', '20', '30']
+      max_parallel:
+        description: 'Max parallel jobs'
+        required: true
+        default: '5'
+        type: choice
+        options: ['3', '5', '8']
+
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  traffic-bots:
+    name: Video Bot ${{ matrix.bot_id }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ github.event_name == 'workflow_dispatch' && fromJSON(github.event.inputs.max_parallel) || 5 }}
+      matrix:
+        bot_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+
+    steps:
+      - name: Gate check
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            LIMIT=${{ github.event.inputs.matrix_count }}
+          else
+            LIMIT=20
+          fi
+          if [ ${{ matrix.bot_id }} -le $LIMIT ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            echo "run=false" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: '24'
+
+      - name: Restore bot session
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .sessions/bot-${{ matrix.bot_id }}
+          key: session-bot-${{ matrix.bot_id }}-${{ github.run_id }}
+          restore-keys: |
+            session-bot-${{ matrix.bot_id }}-
+
+      - name: Install packages
+        if: steps.gate.outputs.run == 'true'
+        run: npm install
+
+      - name: Install Chromium
+        if: steps.gate.outputs.run == 'true'
+        run: npx patchright install --with-deps chromium
+
+      - name: Random jitter
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          JITTER=$(( (RANDOM + ${{ matrix.bot_id }} * 43) % 90 ))
+          echo "Bot ${{ matrix.bot_id }} → sleep ${JITTER}s"
+          sleep $JITTER
+
+      - name: Run video bot
+        if: steps.gate.outputs.run == 'true'
+        env:
+          TARGET_URL: 'https://YOUR-VIDEO-SITE.com/'
+          BOT_ID: ${{ matrix.bot_id }}
+          MAX_DURATION_MINUTES: '8'
+          ADBLOCKER_RATE: '0.20'
+          RETURNING_RATE: '0.30'
+          MIN_VIDEOS: '1'
+          MAX_VIDEOS: '10'
+          VIDEO_WAIT_BUFFER: '3'
+          MAX_VIDEO_DURATION: '90'
+          NEXT_VIDEO_METHOD: 'auto'
+        run: npm start
+
+      - name: Save bot session
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .sessions/bot-${{ matrix.bot_id }}
+          key: session-bot-${{ matrix.bot_id }}-${{ github.run_id }}
