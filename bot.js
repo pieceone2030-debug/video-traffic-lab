@@ -29,7 +29,7 @@ chromiumExtra.use(AnonymizeUA());
    ═══════════════════════════════════════════════════════ */
 
 const CFG = {
-    targetUrl:          process.env.TARGET_URL          || "https://www.youtube.com/",
+    targetUrl:          process.env.TARGET_URL          || "https://www.youtube.com/shorts/7ZPNbUrfta0/",
     botId:              process.env.BOT_ID              || "1",
     maxDuration:        parseInt(process.env.MAX_DURATION_MINUTES || "8", 10),
     adBlockerRate:      parseFloat(process.env.ADBLOCKER_RATE || "0.20"),
