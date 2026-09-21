@@ -85,7 +85,7 @@ jobs:
       - name: Run video bot
         if: steps.gate.outputs.run == 'true'
         env:
-          TARGET_URL: 'https://www.tiktok.com/@candyblast44/video/7671386366139239687/'
+          TARGET_URL: 'https://www.youtube.com/shorts/7ZPNbUrfta0/'
           BOT_ID: ${{ matrix.bot_id }}
           MAX_DURATION_MINUTES: '8'
           ADBLOCKER_RATE: '0.20'
