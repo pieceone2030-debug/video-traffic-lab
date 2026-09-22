@@ -85,15 +85,16 @@ jobs:
       - name: Run video bot
         if: steps.gate.outputs.run == 'true'
         env:
-          TARGET_URL: 'https://www.youtube.com/shorts/7ZPNbUrfta0/'
+          env:
+          TARGET_URL: 'https://www.youtube.com/watch?v=wktmRDfYc5k'
           BOT_ID: ${{ matrix.bot_id }}
           MAX_DURATION_MINUTES: '8'
           ADBLOCKER_RATE: '0.20'
           RETURNING_RATE: '0.30'
+          MIN_WATCH_TIME: '20'
+          MAX_WATCH_TIME: '50'
           MIN_VIDEOS: '1'
-          MAX_VIDEOS: '10'
-          VIDEO_WAIT_BUFFER: '3'
-          MAX_VIDEO_DURATION: '90'
+          MAX_VIDEOS: '5'
           NEXT_VIDEO_METHOD: 'auto'
         run: npm start
 
