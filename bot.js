@@ -1,10 +1,8 @@
 /**
- * Video Traffic Lab v6.0 — Debug Edition
+ * Social Traffic Lab v1.0 — X (Twitter) + Snapchat Embed
  * ─────────────────────────────────────────────────────────────
- * - NO proxies (uses GitHub Actions IPs directly)
- * - REAL video playback detection (monitors currentTime)
- * - Removes the pause-causing click
- * - Detailed debug logging every 5 seconds
+ * Opens a specific X post, clicks on it to activate the
+ * embedded Snapchat content, and simulates human behavior.
  */
 'use strict';
 
@@ -24,13 +22,15 @@ chromiumExtra.use(AnonymizeUA());
    ═══════════════════════════════════════════════════════ */
 
 const CFG = {
-    targetUrl:          process.env.TARGET_URL          || "https://www.youtube.com/watch?v=wktmRDfYc5k",
+    targetUrl:          process.env.TARGET_URL          || "https://x.com/MDL14037628/status/2102423596169634184",
     botId:              process.env.BOT_ID              || "1",
     maxDuration:        parseInt(process.env.MAX_DURATION_MINUTES || "8", 10),
-    targetWatchTime:    parseInt(process.env.TARGET_WATCH_TIME || "45", 10),
-    minWatches:         parseInt(process.env.MIN_VIDEOS || "1", 10),
-    maxWatches:         parseInt(process.env.MAX_VIDEOS || "3", 10),
-    verifyIntervalMs:   5000,
+    // X-specific settings
+    clickOnPost:        true,          // click on the post to activate embed
+    minInteractions:    2,              // minimum number of clicks/scrolls
+    maxInteractions:    5,              // maximum number of clicks/scrolls
+    minWaitAfterClick:  3000,           // ms
+    maxWaitAfterClick:  8000,           // ms
 };
 
 const RUN_ID = Math.random().toString(36).substring(2, 10);
@@ -49,7 +49,7 @@ function log(m) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   🧬  Fingerprint bases
+   🧬  Fingerprint base (5 profiles)
    ═══════════════════════════════════════════════════════ */
 
 const FINGERPRINTS = [
@@ -60,150 +60,146 @@ const FINGERPRINTS = [
 ];
 
 /* ═══════════════════════════════════════════════════════
-   🎬  Video helpers
+   🎭  Behavior Engine
    ═══════════════════════════════════════════════════════ */
 
-async function getVideoState(page) {
-    return await page.evaluate(() => {
-        const videos = Array.from(document.querySelectorAll('video'));
-        if (videos.length === 0) return { exists: false };
+function makeBehaviorEngine() {
+    let mouseX = randInt(300, 1200), mouseY = randInt(200, 800);
+    const pause = (page, a, b) => page.waitForTimeout(randInt(a, b));
 
-        // Pick the largest video (main player)
-        let main = videos[0];
-        let maxArea = 0;
-        for (const v of videos) {
-            const r = v.getBoundingClientRect();
-            const area = r.width * r.height;
-            if (area > maxArea) { maxArea = area; main = v; }
+    async function moveMouse(page, tx, ty) {
+        const sx = mouseX, sy = mouseY;
+        const dist = Math.hypot(tx - sx, ty - sy);
+        if (dist < 2) return;
+        const cX = (sx + tx) / 2 + (Math.random() - 0.5) * Math.min(dist * 0.4, 150);
+        const cY = (sy + ty) / 2 + (Math.random() - 0.5) * Math.min(dist * 0.4, 150);
+        const steps = Math.max(5, Math.min(35, Math.round(dist / 15) + randInt(2, 6)));
+        for (let i = 1; i <= steps; i++) {
+            const t = i / steps;
+            const x = (1 - t) * (1 - t) * sx + 2 * (1 - t) * t * cX + t * t * tx;
+            const y = (1 - t) * (1 - t) * sy + 2 * (1 - t) * t * cY + t * t * ty;
+            await page.mouse.move(x + (Math.random() - 0.5) * 2, y + (Math.random() - 0.5) * 2);
+            await page.waitForTimeout(randInt(4, 16));
         }
+        mouseX = tx; mouseY = ty;
+    }
 
-        return {
-            exists: true,
-            count: videos.length,
-            paused: main.paused,
-            muted: main.muted,
-            currentTime: main.currentTime,
-            duration: isFinite(main.duration) ? main.duration : 0,
-            readyState: main.readyState,
-            ended: main.ended,
-            playbackRate: main.playbackRate
-        };
-    });
-}
+    async function microMoves(page, n) {
+        for (let i = 0; i < n; i++) {
+            await moveMouse(page, mouseX + (Math.random() - 0.5) * 60, mouseY + (Math.random() - 0.5) * 35);
+            await pause(page, 80, 260);
+        }
+    }
 
-async function forcePlayVideo(page) {
-    return await page.evaluate(() => {
-        const videos = Array.from(document.querySelectorAll('video'));
-        let results = [];
-        videos.forEach(v => {
-            try {
-                v.muted = true;
-                v.playsInline = true;
-                const p = v.play();
-                if (p && p.catch) p.catch(e => results.push(e.message));
-            } catch (e) { results.push(e.message); }
-        });
-        return { count: videos.length, errors: results };
-    });
+    async function scrollDown(page, dy) {
+        const chunks = randInt(3, 6);
+        for (let i = 0; i < chunks; i++) {
+            await page.mouse.wheel(0, dy / chunks + (Math.random() - 0.5) * 30);
+            await page.waitForTimeout(randInt(35, 110));
+        }
+    }
+
+    return { moveMouse, microMoves, scrollDown, pause };
 }
 
 /* ═══════════════════════════════════════════════════════
-   🎬  Real video watch (with verification)
+   🎬  X (Twitter) Interaction Helpers
    ═══════════════════════════════════════════════════════ */
 
-async function watchVideo(page, log) {
-    log(`  ▶ Starting watch...`);
+/**
+ * Find and click the main post content to activate embed.
+ * X posts often need a click on the media area to load embeds.
+ */
+async function clickOnPostContent(page, B, log) {
+    log(`  🖱️  Looking for post content to click...`);
 
-    // Step 1: Force play
-    const playResult = await forcePlayVideo(page);
-    log(`  Force play: ${playResult.count} video(s), errors: ${playResult.errors.length}`);
+    // Try multiple selectors that X uses for post media/content
+    const selectors = [
+        '[data-testid="tweetPhoto"]',           // photo
+        '[data-testid="videoPlayer"]',           // video
+        'article[data-testid="tweet"]',          // main tweet
+        '[role="article"]',                      // article role
+        'div[data-testid="card.wrapper"]',       // card
+        'div[data-testid="card.layoutLarge.media"]', // large media card
+    ];
 
-    // Step 2: Wait a moment
-    await page.waitForTimeout(2000);
+    for (const sel of selectors) {
+        const element = await page.$(sel);
+        if (element) {
+            const box = await element.boundingBox();
+            if (box && box.width > 100 && box.height > 100) {
+                const cx = box.x + box.width * (0.3 + Math.random() * 0.4);
+                const cy = box.y + box.height * (0.3 + Math.random() * 0.4);
 
-    // Step 3: Verify video is playing
-    let state = await getVideoState(page);
-    log(`  Initial state: paused=${state.paused}, time=${state.currentTime?.toFixed(1)}s, readyState=${state.readyState}, muted=${state.muted}`);
+                log(`  Found ${sel} at (${Math.round(cx)}, ${Math.round(cy)})`);
 
-    if (!state.exists) {
-        log(`  ❌ No video element found`);
-        return { success: false, reason: 'no_video' };
-    }
+                // Human-like approach
+                await B.moveMouse(page, cx, cy);
+                await B.pause(page, 200, 500);
+                await B.microMoves(page, randInt(1, 2));
 
-    if (state.paused) {
-        log(`  ⚠️  Video still paused, retrying play...`);
-        await forcePlayVideo(page);
-        await page.waitForTimeout(2000);
-        state = await getVideoState(page);
-        log(`  After retry: paused=${state.paused}, time=${state.currentTime?.toFixed(1)}s`);
-    }
+                // Click
+                await page.mouse.click(cx, cy);
+                log(`  ✓ Clicked on post content`);
 
-    if (state.paused) {
-        log(`  ❌ Video won't play`);
-        return { success: false, reason: 'cannot_play' };
-    }
-
-    // Step 4: Monitor video for target time — with REAL verification
-    const startTime = Date.now();
-    const startVideoTime = state.currentTime;
-    const targetMs = CFG.targetWatchTime * 1000;
-    let lastCheck = 0;
-    let frozenCount = 0;
-
-    log(`  👀 Monitoring for ${CFG.targetWatchTime}s (checking every ${CFG.verifyIntervalMs / 1000}s)...`);
-
-    while (Date.now() - startTime < targetMs) {
-        await page.waitForTimeout(CFG.verifyIntervalMs);
-
-        const s = await getVideoState(page).catch(() => null);
-        if (!s || !s.exists) {
-            log(`  ⚠️  Video element disappeared`);
-            frozenCount++;
-            continue;
-        }
-
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
-        const videoProgress = (s.currentTime - startVideoTime).toFixed(1);
-
-        log(`     [${elapsed}s] currentTime=${s.currentTime.toFixed(1)}s (+${videoProgress}s), paused=${s.paused}, ended=${s.ended}`);
-
-        // ⭐ Check if video is actually progressing
-        if (s.paused || s.ended) {
-            log(`     ⚠️  Video paused/ended at ${s.currentTime.toFixed(1)}s`);
-            if (s.ended) break;
-            // Try to resume
-            await forcePlayVideo(page);
-        }
-
-        // Check if currentTime is stuck (frozen)
-        if (s.currentTime === lastCheck && !s.paused) {
-            frozenCount++;
-            log(`     ⚠️  Frozen counter: ${frozenCount}`);
-            if (frozenCount >= 3) {
-                log(`     ❌ Video frozen, aborting`);
-                return { success: false, reason: 'frozen', watched: s.currentTime - startVideoTime };
+                // Wait for any embed to load
+                await page.waitForTimeout(randInt(2000, 4000));
+                return true;
             }
-        } else {
-            frozenCount = 0;
         }
-        lastCheck = s.currentTime;
     }
 
-    const finalState = await getVideoState(page);
-    const actualWatched = finalState.currentTime - startVideoTime;
+    log(`  ⚠️  No post content found`);
+    return false;
+}
 
-    log(`  ✓ Watch phase done | actual video progress: ${actualWatched.toFixed(1)}s`);
+/**
+ * Wait for embedded Snapchat content to become visible.
+ */
+async function waitForEmbed(page, log, timeoutMs = 15000) {
+    log(`  ⏳ Waiting for embedded content...`);
+    const startTime = Date.now();
 
-    if (actualWatched < 5) {
-        log(`  ⚠️  Video only progressed ${actualWatched.toFixed(1)}s — not enough`);
-        return { success: false, reason: 'insufficient_playback', watched: actualWatched };
+    while (Date.now() - startTime < timeoutMs) {
+        const hasEmbed = await page.evaluate(() => {
+            // Snapchat embeds may appear as iframes, video, or specific containers
+            const iframes = document.querySelectorAll('iframe');
+            const videos = document.querySelectorAll('video');
+
+            // Check for Snapchat-specific selectors
+            const snapSelectors = [
+                '[class*="snap"]',
+                '[id*="snap"]',
+                'iframe[src*="snapchat"]',
+                'iframe[src*="snap"]'
+            ];
+
+            let hasSnap = false;
+            for (const sel of snapSelectors) {
+                if (document.querySelector(sel)) {
+                    hasSnap = true;
+                    break;
+                }
+            }
+
+            return {
+                iframes: iframes.length,
+                videos: videos.length,
+                hasSnap,
+                url: location.href
+            };
+        });
+
+        if (hasEmbed.hasSnap || hasEmbed.iframes > 0 || hasEmbed.videos > 0) {
+            log(`  ✓ Embed detected: iframes=${hasEmbed.iframes}, videos=${hasEmbed.videos}, snap=${hasEmbed.hasSnap}`);
+            return true;
+        }
+
+        await page.waitForTimeout(1000);
     }
 
-    return {
-        success: true,
-        watched: actualWatched,
-        duration: finalState.duration
-    };
+    log(`  ⚠️  No embed detected within timeout`);
+    return false;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -219,27 +215,14 @@ async function runSession() {
     log(`Fingerprint: ${fp.name}`);
     log(`Timezone: ${fp.timezone} | Locale: ${fp.locale}`);
 
-    const targetWatches = randInt(CFG.minWatches, CFG.maxWatches);
-    log(`🎯 Target: ${targetWatches} reload(s) of the video`);
-
-    const B = {
-        microMoves: async (page, n) => {
-            for (let i = 0; i < n; i++) {
-                const x = randInt(200, 1500);
-                const y = randInt(200, 800);
-                await page.mouse.move(x, y);
-                await page.waitForTimeout(randInt(100, 400));
-            }
-        }
-    };
-
+    const B = makeBehaviorEngine();
     let context;
     const sessionPath = path.join(process.cwd(), '.sessions', `bot-${CFG.botId}`);
 
     try {
         fs.mkdirSync(sessionPath, { recursive: true });
 
-        log(`Launching browser (NO proxy)...`);
+        log(`Launching browser...`);
 
         context = await chromiumExtra.launchPersistentContext(sessionPath, {
             headless: true,
@@ -254,7 +237,6 @@ async function runSession() {
                 `--user-agent=${fp.userAgent}`,
                 `--lang=${fp.languages[0]}`,
                 '--disable-blink-features=AutomationControlled',
-                '--autoplay-policy=no-user-gesture-required',
                 '--no-sandbox', '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage', '--no-first-run', '--no-zygote'
             ]
@@ -263,11 +245,12 @@ async function runSession() {
         let page = context.pages()[0];
         if (!page) page = await context.newPage();
 
-        log(`Navigating...`);
+        // Navigate to the post
+        log(`Navigating to X post...`);
         await page.goto(CFG.targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         log(`Loaded`);
 
-        // Wait for video player to be ready
+        // Wait for page to settle
         await page.waitForTimeout(randInt(4000, 7000));
 
         // Diagnostics
@@ -276,48 +259,68 @@ async function runSession() {
             plugins: navigator.plugins.length,
             tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
             lang: navigator.language,
-            videos: document.querySelectorAll('video').length,
-            url: location.href
+            url: location.href,
+            title: document.title
         }));
-        log(`CHECK: wd=${diag.wd}, plugins=${diag.plugins}, tz=${diag.tz}, lang=${diag.lang}, videos=${diag.videos}`);
+        log(`CHECK: wd=${diag.wd}, plugins=${diag.plugins}, tz=${diag.tz}, lang=${diag.lang}`);
+        log(`Title: ${diag.title.substring(0, 80)}`);
 
-        let successCount = 0;
+        // Human-like initial behavior
+        await B.microMoves(page, randInt(2, 4));
+        await B.pause(page, 1000, 2500);
 
-        for (let i = 1; i <= targetWatches; i++) {
-            log(`\n═══ Watch ${i}/${targetWatches} ═══`);
+        // Scroll slightly to mimic reading
+        await B.scrollDown(page, randInt(100, 300));
+        await B.pause(page, 500, 1500);
 
-            if (i > 1) {
-                log(`  🔄 Reloading...`);
-                await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
-                await page.waitForTimeout(randInt(4000, 7000));
-            }
-
-            const result = await watchVideo(page, log);
-
-            if (result.success) {
-                successCount++;
-                log(`  ✅ Watch ${i} succeeded (${result.watched.toFixed(1)}s)`);
-            } else {
-                log(`  ❌ Watch ${i} failed: ${result.reason}`);
-            }
-
-            // Delay before next
-            if (i < targetWatches) {
-                const delay = randInt(4000, 12000);
-                log(`  💭 Delay: ${(delay / 1000).toFixed(1)}s`);
-                await page.waitForTimeout(delay);
-            }
-
-            if (Date.now() - startTime > CFG.maxDuration * 60 * 1000 - 30000) {
-                log(`  ⏰ Time limit`);
-                break;
-            }
+        // Click on the post to activate embed
+        let clicked = false;
+        if (CFG.clickOnPost) {
+            clicked = await clickOnPostContent(page, B, log);
         }
 
-        const duration = Math.round((Date.now() - startTime) / 1000);
-        log(`\n✅ Session done in ${duration}s | successes: ${successCount}/${targetWatches}`);
+        // Wait for embed to load
+        if (clicked) {
+            await waitForEmbed(page, log);
+        }
 
-        return { status: 'ok', duration, successCount, targetWatches };
+        // Human-like interactions (scroll, pause, mouse moves)
+        const interactions = randInt(CFG.minInteractions, CFG.maxInteractions);
+        log(`  🎭 Performing ${interactions} human-like interactions...`);
+
+        for (let i = 0; i < interactions; i++) {
+            const action = pick(['scroll', 'mouse', 'pause']);
+
+            if (action === 'scroll') {
+                await B.scrollDown(page, randInt(150, 400));
+                log(`  ⬇️  Scrolled`);
+            } else if (action === 'mouse') {
+                const x = randInt(200, fp.viewport.width - 200);
+                const y = randInt(200, fp.viewport.height - 200);
+                await B.moveMouse(page, x, y);
+                log(`  🖱️  Mouse moved`);
+            } else {
+                log(`  ⏸️  Pausing...`);
+            }
+
+            await B.pause(page, 1000, 3000);
+        }
+
+        // Final wait before closing
+        const finalWait = randInt(5000, 12000);
+        log(`  ⏳ Final wait: ${(finalWait / 1000).toFixed(1)}s`);
+        await page.waitForTimeout(finalWait);
+
+        // Take a screenshot for verification (optional)
+        const screenshotPath = path.join(process.cwd(), 'screenshots', `x-post-${RUN_ID}.png`);
+        fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
+        await page.screenshot({ path: screenshotPath, fullPage: false });
+        log(`  📸 Screenshot saved: ${screenshotPath}`);
+
+        const duration = Math.round((Date.now() - startTime) / 1000);
+        log(`\n✅ Session done in ${duration}s`);
+
+        return { status: 'ok', duration, clicked, interactions };
 
     } catch (e) {
         log(`❌ Error: ${e.message}`);
@@ -333,7 +336,7 @@ async function runSession() {
 
 async function main() {
     console.log("╔═══════════════════════════════════════════════════╗");
-    console.log("║   VIDEO TRAFFIC LAB v6.0 — Debug Edition          ║");
+    console.log("║   SOCIAL TRAFFIC LAB v1.0 — X + Snapchat Embed    ║");
     console.log("╚═══════════════════════════════════════════════════╝");
 
     const timeout = setTimeout(() => {
