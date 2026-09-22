@@ -86,13 +86,10 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         env:
           env:
-          TARGET_URL: 'https://www.youtube.com/watch?v=wktmRDfYc5k'
+          
+          TARGET_URL: 'https://x.com/MDL14037628/status/2102423596169634184'
           BOT_ID: ${{ matrix.bot_id }}
           MAX_DURATION_MINUTES: '8'
-          TARGET_WATCH_TIME: '45'
-          MIN_VIDEOS: '1'
-          MAX_VIDEOS: '3'
-          NEXT_VIDEO_METHOD: 'auto'
         run: npm start
 
       - name: Save bot session
