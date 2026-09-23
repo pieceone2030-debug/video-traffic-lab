@@ -85,11 +85,11 @@ jobs:
       - name: Run video bot
         if: steps.gate.outputs.run == 'true'
         env:
-          env:
-          
-          TARGET_URL: 'https://x.com/MDL14037628/status/2102423596169634184'
+          TARGET_URL: 'https://anime-tv-plus.blogspot.com/2026/09/snap.html'
           BOT_ID: ${{ matrix.bot_id }}
-          MAX_DURATION_MINUTES: '8'
+          MAX_DURATION_MINUTES: '10'
+          MIN_WATCH_TIME: '180'
+          MAX_WATCH_TIME: '240'
         run: npm start
 
       - name: Save bot session
