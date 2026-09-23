@@ -1,8 +1,12 @@
 /**
- * Social Traffic Lab v1.0 — X (Twitter) + Snapchat Embed
- * ─────────────────────────────────────────────────────────────
- * Opens a specific X post, clicks on it to activate the
- * embedded Snapchat content, and simulates human behavior.
+ * Blog Traffic Lab v2.0 — Embedded Video Watcher
+ * Target: https://anime-tv-plus.blogspot.com/2026/09/snap.html
+ *
+ * Behavior:
+ *   • Opens the page
+ *   • Watches embedded video for 3-4 minutes
+ *   • Simulates human mouse/scroll activity
+ *   • Uses stealth + fingerprint randomization
  */
 'use strict';
 
@@ -22,15 +26,11 @@ chromiumExtra.use(AnonymizeUA());
    ═══════════════════════════════════════════════════════ */
 
 const CFG = {
-    targetUrl:          process.env.TARGET_URL          || "https://x.com/MDL14037628/status/2102423596169634184",
-    botId:              process.env.BOT_ID              || "1",
-    maxDuration:        parseInt(process.env.MAX_DURATION_MINUTES || "8", 10),
-    // X-specific settings
-    clickOnPost:        true,          // click on the post to activate embed
-    minInteractions:    2,              // minimum number of clicks/scrolls
-    maxInteractions:    5,              // maximum number of clicks/scrolls
-    minWaitAfterClick:  3000,           // ms
-    maxWaitAfterClick:  8000,           // ms
+    targetUrl:        process.env.TARGET_URL        || "https://anime-tv-plus.blogspot.com/2026/09/snap.html",
+    botId:            process.env.BOT_ID            || "1",
+    maxDuration:      parseInt(process.env.MAX_DURATION_MINUTES || "10", 10), // 10 min total
+    minWatchTime:     parseInt(process.env.MIN_WATCH_TIME || "180", 10),   // 3 minutes
+    maxWatchTime:     parseInt(process.env.MAX_WATCH_TIME || "240", 10),   // 4 minutes
 };
 
 const RUN_ID = Math.random().toString(36).substring(2, 10);
@@ -49,7 +49,7 @@ function log(m) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   🧬  Fingerprint base (5 profiles)
+   🧬  Fingerprints (5 profiles)
    ═══════════════════════════════════════════════════════ */
 
 const FINGERPRINTS = [
@@ -57,6 +57,7 @@ const FINGERPRINTS = [
     { name: "Win-NVIDIA-RTX3060", userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36", platform: "Win32",    viewport: { width: 1536, height: 864 },  screen: { width: 1536, height: 864 },  gpuVendor: "Google Inc. (NVIDIA)", gpuRenderer: "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)", cores: 12, memory: 16, colorDepth: 24, dsf: 1, timezone: 'America/Chicago',  locale: 'en-US', languages: ['en-US', 'en'] },
     { name: "Mac-M1",             userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",     platform: "MacIntel", viewport: { width: 1512, height: 945 },  screen: { width: 1512, height: 945 },  gpuVendor: "Google Inc. (Apple)",  gpuRenderer: "ANGLE (Apple, Apple M1, OpenGL 4.1)", cores: 8,  memory: 8,  colorDepth: 30, dsf: 2, timezone: 'America/Los_Angeles', locale: 'en-US', languages: ['en-US', 'en'] },
     { name: "Win-Intel-Iris-Xe",  userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36", platform: "Win32",    viewport: { width: 2560, height: 1440 }, screen: { width: 2560, height: 1440 }, gpuVendor: "Google Inc. (Intel)",  gpuRenderer: "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)", cores: 16, memory: 32, colorDepth: 24, dsf: 1, timezone: 'Europe/London', locale: 'en-GB', languages: ['en-GB', 'en'] },
+    { name: "Win-AMD-RX6600",     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", platform: "Win32",    viewport: { width: 1366, height: 768 },  screen: { width: 1366, height: 768 },  gpuVendor: "Google Inc. (AMD)",    gpuRenderer: "ANGLE (AMD, AMD Radeon RX 6600 Direct3D11 vs_5_0 ps_5_0, D3D11)", cores: 6,  memory: 8,  colorDepth: 24, dsf: 1, timezone: 'Europe/Paris',  locale: 'fr-FR', languages: ['fr-FR', 'fr', 'en'] },
 ];
 
 /* ═══════════════════════════════════════════════════════
@@ -71,23 +72,25 @@ function makeBehaviorEngine() {
         const sx = mouseX, sy = mouseY;
         const dist = Math.hypot(tx - sx, ty - sy);
         if (dist < 2) return;
+
         const cX = (sx + tx) / 2 + (Math.random() - 0.5) * Math.min(dist * 0.4, 150);
         const cY = (sy + ty) / 2 + (Math.random() - 0.5) * Math.min(dist * 0.4, 150);
         const steps = Math.max(5, Math.min(35, Math.round(dist / 15) + randInt(2, 6)));
+
         for (let i = 1; i <= steps; i++) {
             const t = i / steps;
             const x = (1 - t) * (1 - t) * sx + 2 * (1 - t) * t * cX + t * t * tx;
             const y = (1 - t) * (1 - t) * sy + 2 * (1 - t) * t * cY + t * t * ty;
-            await page.mouse.move(x + (Math.random() - 0.5) * 2, y + (Math.random() - 0.5) * 2);
-            await page.waitForTimeout(randInt(4, 16));
+            await page.mouse.move(x + (Math.random() - 0.5) * 3, y + (Math.random() - 0.5) * 3);
+            await page.waitForTimeout(randInt(4, 18));
         }
         mouseX = tx; mouseY = ty;
     }
 
     async function microMoves(page, n) {
         for (let i = 0; i < n; i++) {
-            await moveMouse(page, mouseX + (Math.random() - 0.5) * 60, mouseY + (Math.random() - 0.5) * 35);
-            await pause(page, 80, 260);
+            await moveMouse(page, mouseX + (Math.random() - 0.5) * 80, mouseY + (Math.random() - 0.5) * 50);
+            await pause(page, 80, 280);
         }
     }
 
@@ -95,111 +98,30 @@ function makeBehaviorEngine() {
         const chunks = randInt(3, 6);
         for (let i = 0; i < chunks; i++) {
             await page.mouse.wheel(0, dy / chunks + (Math.random() - 0.5) * 30);
-            await page.waitForTimeout(randInt(35, 110));
+            await page.waitForTimeout(randInt(40, 120));
         }
     }
 
-    return { moveMouse, microMoves, scrollDown, pause };
-}
+    async function randomPause(page, minMs, maxMs) {
+        const wait = randInt(minMs, maxMs);
+        const action = Math.random();
 
-/* ═══════════════════════════════════════════════════════
-   🎬  X (Twitter) Interaction Helpers
-   ═══════════════════════════════════════════════════════ */
-
-/**
- * Find and click the main post content to activate embed.
- * X posts often need a click on the media area to load embeds.
- */
-async function clickOnPostContent(page, B, log) {
-    log(`  🖱️  Looking for post content to click...`);
-
-    // Try multiple selectors that X uses for post media/content
-    const selectors = [
-        '[data-testid="tweetPhoto"]',           // photo
-        '[data-testid="videoPlayer"]',           // video
-        'article[data-testid="tweet"]',          // main tweet
-        '[role="article"]',                      // article role
-        'div[data-testid="card.wrapper"]',       // card
-        'div[data-testid="card.layoutLarge.media"]', // large media card
-    ];
-
-    for (const sel of selectors) {
-        const element = await page.$(sel);
-        if (element) {
-            const box = await element.boundingBox();
-            if (box && box.width > 100 && box.height > 100) {
-                const cx = box.x + box.width * (0.3 + Math.random() * 0.4);
-                const cy = box.y + box.height * (0.3 + Math.random() * 0.4);
-
-                log(`  Found ${sel} at (${Math.round(cx)}, ${Math.round(cy)})`);
-
-                // Human-like approach
-                await B.moveMouse(page, cx, cy);
-                await B.pause(page, 200, 500);
-                await B.microMoves(page, randInt(1, 2));
-
-                // Click
-                await page.mouse.click(cx, cy);
-                log(`  ✓ Clicked on post content`);
-
-                // Wait for any embed to load
-                await page.waitForTimeout(randInt(2000, 4000));
-                return true;
+        if (action < 0.4) {
+            await page.waitForTimeout(wait);
+        } else if (action < 0.75) {
+            const start = Date.now();
+            while (Date.now() - start < wait) {
+                await microMoves(page, 1);
+                await page.waitForTimeout(randInt(150, 450));
             }
+        } else {
+            const vp = page.viewportSize();
+            await moveMouse(page, randInt(100, vp.width - 100), randInt(100, vp.height - 100));
+            await page.waitForTimeout(wait * 0.6);
         }
     }
 
-    log(`  ⚠️  No post content found`);
-    return false;
-}
-
-/**
- * Wait for embedded Snapchat content to become visible.
- */
-async function waitForEmbed(page, log, timeoutMs = 15000) {
-    log(`  ⏳ Waiting for embedded content...`);
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < timeoutMs) {
-        const hasEmbed = await page.evaluate(() => {
-            // Snapchat embeds may appear as iframes, video, or specific containers
-            const iframes = document.querySelectorAll('iframe');
-            const videos = document.querySelectorAll('video');
-
-            // Check for Snapchat-specific selectors
-            const snapSelectors = [
-                '[class*="snap"]',
-                '[id*="snap"]',
-                'iframe[src*="snapchat"]',
-                'iframe[src*="snap"]'
-            ];
-
-            let hasSnap = false;
-            for (const sel of snapSelectors) {
-                if (document.querySelector(sel)) {
-                    hasSnap = true;
-                    break;
-                }
-            }
-
-            return {
-                iframes: iframes.length,
-                videos: videos.length,
-                hasSnap,
-                url: location.href
-            };
-        });
-
-        if (hasEmbed.hasSnap || hasEmbed.iframes > 0 || hasEmbed.videos > 0) {
-            log(`  ✓ Embed detected: iframes=${hasEmbed.iframes}, videos=${hasEmbed.videos}, snap=${hasEmbed.hasSnap}`);
-            return true;
-        }
-
-        await page.waitForTimeout(1000);
-    }
-
-    log(`  ⚠️  No embed detected within timeout`);
-    return false;
+    return { moveMouse, microMoves, scrollDown, randomPause, pause };
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -210,10 +132,10 @@ async function runSession() {
     const startTime = Date.now();
     log(`Run ID: ${RUN_ID}`);
     log(`Target: ${CFG.targetUrl}`);
+    log(`Watch time: ${CFG.minWatchTime}-${CFG.maxWatchTime}s`);
 
     const fp = pick(FINGERPRINTS);
-    log(`Fingerprint: ${fp.name}`);
-    log(`Timezone: ${fp.timezone} | Locale: ${fp.locale}`);
+    log(`Fingerprint: ${fp.name} | TZ: ${fp.timezone} | Locale: ${fp.locale}`);
 
     const B = makeBehaviorEngine();
     let context;
@@ -223,7 +145,6 @@ async function runSession() {
         fs.mkdirSync(sessionPath, { recursive: true });
 
         log(`Launching browser...`);
-
         context = await chromiumExtra.launchPersistentContext(sessionPath, {
             headless: true,
             viewport: fp.viewport,
@@ -237,6 +158,7 @@ async function runSession() {
                 `--user-agent=${fp.userAgent}`,
                 `--lang=${fp.languages[0]}`,
                 '--disable-blink-features=AutomationControlled',
+                '--autoplay-policy=no-user-gesture-required', // allow autoplay
                 '--no-sandbox', '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage', '--no-first-run', '--no-zygote'
             ]
@@ -245,82 +167,59 @@ async function runSession() {
         let page = context.pages()[0];
         if (!page) page = await context.newPage();
 
-        // Navigate to the post
-        log(`Navigating to X post...`);
+        log(`Navigating...`);
         await page.goto(CFG.targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         log(`Loaded`);
 
-        // Wait for page to settle
-        await page.waitForTimeout(randInt(4000, 7000));
+        // Wait for initial render
+        await page.waitForTimeout(randInt(3000, 6000));
 
         // Diagnostics
         const diag = await page.evaluate(() => ({
             wd: navigator.webdriver,
             plugins: navigator.plugins.length,
             tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            lang: navigator.language,
-            url: location.href,
-            title: document.title
+            videos: document.querySelectorAll('video').length,
+            iframes: document.querySelectorAll('iframe').length,
+            title: document.title.substring(0, 80)
         }));
-        log(`CHECK: wd=${diag.wd}, plugins=${diag.plugins}, tz=${diag.tz}, lang=${diag.lang}`);
-        log(`Title: ${diag.title.substring(0, 80)}`);
+        log(`CHECK: wd=${diag.wd}, plugins=${diag.plugins}, tz=${diag.tz}, videos=${diag.videos}, iframes=${diag.iframes}`);
+        log(`Title: ${diag.title}`);
 
-        // Human-like initial behavior
-        await B.microMoves(page, randInt(2, 4));
-        await B.pause(page, 1000, 2500);
+        // Try to force play any video
+        await page.evaluate(() => {
+            document.querySelectorAll('video').forEach(v => {
+                try { v.muted = true; v.play().catch(() => {}); } catch (e) {}
+            });
+        }).catch(() => {});
 
-        // Scroll slightly to mimic reading
-        await B.scrollDown(page, randInt(100, 300));
-        await B.pause(page, 500, 1500);
+        // ⭐ Watch loop: stay for min-watch-time with human-like activity
+        const targetWatch = randInt(CFG.minWatchTime, CFG.maxWatchTime);
+        log(`👀 Will watch for ${(targetWatch / 1000).toFixed(1)}s...`);
 
-        // Click on the post to activate embed
-        let clicked = false;
-        if (CFG.clickOnPost) {
-            clicked = await clickOnPostContent(page, B, log);
-        }
+        const watchStart = Date.now();
+        while (Date.now() - watchStart < targetWatch * 1000) {
+            const action = Math.random();
 
-        // Wait for embed to load
-        if (clicked) {
-            await waitForEmbed(page, log);
-        }
-
-        // Human-like interactions (scroll, pause, mouse moves)
-        const interactions = randInt(CFG.minInteractions, CFG.maxInteractions);
-        log(`  🎭 Performing ${interactions} human-like interactions...`);
-
-        for (let i = 0; i < interactions; i++) {
-            const action = pick(['scroll', 'mouse', 'pause']);
-
-            if (action === 'scroll') {
-                await B.scrollDown(page, randInt(150, 400));
-                log(`  ⬇️  Scrolled`);
-            } else if (action === 'mouse') {
-                const x = randInt(200, fp.viewport.width - 200);
-                const y = randInt(200, fp.viewport.height - 200);
-                await B.moveMouse(page, x, y);
-                log(`  🖱️  Mouse moved`);
+            if (action < 0.3) {
+                await B.randomPause(page, 1000, 3000);
+            } else if (action < 0.55) {
+                await B.microMoves(page, randInt(1, 3));
+            } else if (action < 0.75) {
+                await B.scrollDown(page, randInt(100, 400));
+            } else if (action < 0.9) {
+                await B.randomPause(page, 500, 1500);
             } else {
-                log(`  ⏸️  Pausing...`);
+                const vp = page.viewportSize();
+                await B.moveMouse(page, randInt(100, vp.width - 100), randInt(100, vp.height - 100));
             }
-
-            await B.pause(page, 1000, 3000);
         }
 
-        // Final wait before closing
-        const finalWait = randInt(5000, 12000);
-        log(`  ⏳ Final wait: ${(finalWait / 1000).toFixed(1)}s`);
-        await page.waitForTimeout(finalWait);
-
-        // Take a screenshot for verification (optional)
-        const screenshotPath = path.join(process.cwd(), 'screenshots', `x-post-${RUN_ID}.png`);
-        fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
-        await page.screenshot({ path: screenshotPath, fullPage: false });
-        log(`  📸 Screenshot saved: ${screenshotPath}`);
-
+        log(`✅ Watch time completed.`);
         const duration = Math.round((Date.now() - startTime) / 1000);
         log(`\n✅ Session done in ${duration}s`);
 
-        return { status: 'ok', duration, clicked, interactions };
+        return { status: 'ok', duration, watched: targetWatch };
 
     } catch (e) {
         log(`❌ Error: ${e.message}`);
@@ -336,7 +235,7 @@ async function runSession() {
 
 async function main() {
     console.log("╔═══════════════════════════════════════════════════╗");
-    console.log("║   SOCIAL TRAFFIC LAB v1.0 — X + Snapchat Embed    ║");
+    console.log("║   BLOG TRAFFIC LAB v2.0 — Video Watcher            ║");
     console.log("╚═══════════════════════════════════════════════════╝");
 
     const timeout = setTimeout(() => {
