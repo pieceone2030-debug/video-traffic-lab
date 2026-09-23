@@ -1,12 +1,6 @@
 /**
  * Blog Traffic Lab v2.0 — Embedded Video Watcher
  * Target: https://anime-tv-plus.blogspot.com/2026/09/snap.html
- *
- * Behavior:
- *   • Opens the page
- *   • Watches embedded video for 3-4 minutes
- *   • Simulates human mouse/scroll activity
- *   • Uses stealth + fingerprint randomization
  */
 'use strict';
 
@@ -28,9 +22,9 @@ chromiumExtra.use(AnonymizeUA());
 const CFG = {
     targetUrl:        process.env.TARGET_URL        || "https://anime-tv-plus.blogspot.com/2026/09/snap.html",
     botId:            process.env.BOT_ID            || "1",
-    maxDuration:      parseInt(process.env.MAX_DURATION_MINUTES || "10", 10), // 10 min total
-    minWatchTime:     parseInt(process.env.MIN_WATCH_TIME || "180", 10),   // 3 minutes
-    maxWatchTime:     parseInt(process.env.MAX_WATCH_TIME || "240", 10),   // 4 minutes
+    maxDuration:      parseInt(process.env.MAX_DURATION_MINUTES || "10", 10),
+    minWatchTime:     parseInt(process.env.MIN_WATCH_TIME || "180", 10),
+    maxWatchTime:     parseInt(process.env.MAX_WATCH_TIME || "240", 10),
 };
 
 const RUN_ID = Math.random().toString(36).substring(2, 10);
@@ -49,7 +43,7 @@ function log(m) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   🧬  Fingerprints (5 profiles)
+   🧬  Fingerprints
    ═══════════════════════════════════════════════════════ */
 
 const FINGERPRINTS = [
@@ -158,7 +152,7 @@ async function runSession() {
                 `--user-agent=${fp.userAgent}`,
                 `--lang=${fp.languages[0]}`,
                 '--disable-blink-features=AutomationControlled',
-                '--autoplay-policy=no-user-gesture-required', // allow autoplay
+                '--autoplay-policy=no-user-gesture-required',
                 '--no-sandbox', '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage', '--no-first-run', '--no-zygote'
             ]
@@ -171,10 +165,8 @@ async function runSession() {
         await page.goto(CFG.targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         log(`Loaded`);
 
-        // Wait for initial render
         await page.waitForTimeout(randInt(3000, 6000));
 
-        // Diagnostics
         const diag = await page.evaluate(() => ({
             wd: navigator.webdriver,
             plugins: navigator.plugins.length,
@@ -186,19 +178,19 @@ async function runSession() {
         log(`CHECK: wd=${diag.wd}, plugins=${diag.plugins}, tz=${diag.tz}, videos=${diag.videos}, iframes=${diag.iframes}`);
         log(`Title: ${diag.title}`);
 
-        // Try to force play any video
+        // Force play any main-document video (muted)
         await page.evaluate(() => {
             document.querySelectorAll('video').forEach(v => {
                 try { v.muted = true; v.play().catch(() => {}); } catch (e) {}
             });
         }).catch(() => {});
 
-        // ⭐ Watch loop: stay for min-watch-time with human-like activity
-        const targetWatch = randInt(CFG.minWatchTime, CFG.maxWatchTime);
-        log(`👀 Will watch for ${(targetWatch / 1000).toFixed(1)}s...`);
+        // ⭐ Watch loop
+        const targetWatchSec = randInt(CFG.minWatchTime, CFG.maxWatchTime);
+        log(`👀 Will watch for ${targetWatchSec}s...`);
 
         const watchStart = Date.now();
-        while (Date.now() - watchStart < targetWatch * 1000) {
+        while (Date.now() - watchStart < targetWatchSec * 1000) {
             const action = Math.random();
 
             if (action < 0.3) {
@@ -219,7 +211,7 @@ async function runSession() {
         const duration = Math.round((Date.now() - startTime) / 1000);
         log(`\n✅ Session done in ${duration}s`);
 
-        return { status: 'ok', duration, watched: targetWatch };
+        return { status: 'ok', duration, watchedSeconds: targetWatchSec };
 
     } catch (e) {
         log(`❌ Error: ${e.message}`);
